@@ -22,6 +22,11 @@ set -e
 BIN="$HOME/bin"
 DAEMON=dockerd
 
+driver="vfs"
+if lsb_release -ds | grep -i ubuntu 2>&1 2>/dev/null; then
+	driver="overlay"
+fi
+
 checks() {
 	# OS verification: Linux only, point osx/win to helpful locations
 	case "$(uname)" in
@@ -88,7 +93,7 @@ checks() {
 check_systemd() {
 	if !which systemd 2>&1 2>/dev/null; then
 		nonsystemd_fallback
-		exit 0
+		return
 	fi
 	
 	mkdir -p $HOME/.config/systemd/user
@@ -101,7 +106,7 @@ Documentation=https://docs.docker.com
 
 [Service]
 Environment=PATH=$HOME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=$HOME/bin/dockerd-rootless.sh --experimental --iptables=false --storage-driver vfs
+ExecStart=$HOME/bin/dockerd-rootless.sh --experimental --iptables=false --storage-driver $driver
 ExecReload=/bin/kill -s HUP \$MAINPID
 TimeoutSec=0
 RestartSec=2
@@ -113,7 +118,6 @@ LimitNPROC=infinity
 LimitCORE=infinity
 TasksMax=infinity
 Delegate=yes
-KillMode=process
 
 [Install]
 WantedBy=default.target
@@ -121,14 +125,32 @@ EOT
 	systemctl --user daemon-reload
 	fi
 	if ! systemctl --user status docker ; then
+		echo "# starting systemd service"
 		systemctl --user start docker
 	fi
 	systemctl --user status docker
 }
 
+shutdown_instructions() {
+	if !which systemd 2>&1 2>/dev/null; then
+		return
+	fi
+	cat <<EOT
+#
+# To control docker service run:
+# systemctl --user (start|stop|restart) docker
+#
+EOT
+}
+
+
 nonsystemd_fallback() {
-	echo "this is nonsystemd backup"
-	exit 1
+	echo <<EOT
+# systemd not detected, dockerd daemon needs to be started manually
+#
+$HOME/bin/dockerd-rootless.sh --experimental --iptables=false --storage-driver $driver
+#
+EOT
 }
 
 print_instructions() {
@@ -141,6 +163,8 @@ print_instructions() {
 	
 	echo "export PATH=$BIN:\$PATH"
 	echo "export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock"
+	echo ""
+	shutdown_instructions
 	exit 0
 }
 
