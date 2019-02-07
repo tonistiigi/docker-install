@@ -17,6 +17,7 @@ SCRIPT_COMMIT_SHA=UNKNOWN
 
 
 # TODO:
+set -e
 
 BIN="$HOME/bin"
 DAEMON=dockerd
@@ -41,15 +42,21 @@ checks() {
 		>&2 echo "Aborting because HOME directory $HOME does not exist"; exit 1
 	fi
 
+	if [ -d "$BIN" ]; then
+		if ! test -w "$BIN" ; then
+			>&2 echo "Aborting because $BIN is not writable"; exit 1
+		fi
+	else
+		if ! test -w "$HOME" ; then
+			>&2 echo "Aborting because $HOME is not writable"; exit 1
+		fi
+	fi
+	
 	# Already installed verification (unless force?). Only having docker cli binary previously shouldn't fail the build.
 	if [ -f "$BIN/$DAEMON" ]; then
 		# If rootless installation is detected print out the modified PATH and DOCKER_HOST that needs to be set.
 		echo "# Existing rootless Docker detected at $BIN/$DAEMON"
-		if [ "$(which $DAEMON)" != "$BIN/$DAEMON" ]; then
-			echo "PATH=$BIN:$PATH"
-		fi
-		echo "DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock"
-		exit 0
+		print_instructions
 	fi
 
 	# Existing rootful docker verification
@@ -66,8 +73,75 @@ checks() {
 	# Verify newuidmap/newgidmap
 	# Verify /etc/subuid
 	# Verify /proc/sys/kernel/unprivileged_userns_clone
+	
+
+# cat <<EOF | sudo sh -x
+# 	cat <<EOT > /etc/sysctl.d/50-rootless.conf
+# 	kernel.unprivileged_userns_clone = 1
+# EOT
+# 	sysctl --system
+# EOF
 
 	# On errors print the commands that user needs to run (ideally together). The commands need to be run with sudo.
+}
+
+check_systemd() {
+	if !which systemd 2>&1 2>/dev/null; then
+		nonsystemd_fallback
+		exit 0
+	fi
+	
+	mkdir -p $HOME/.config/systemd/user
+	
+	if [ ! -f $HOME/.config/systemd/user/docker.service ]; then
+		cat <<EOT > $HOME/.config/systemd/user/docker.service
+[Unit]
+Description=Docker Application Container Engine (Rootless)
+Documentation=https://docs.docker.com
+
+[Service]
+Environment=PATH=$HOME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=$HOME/bin/dockerd-rootless.sh --experimental --iptables=false --storage-driver vfs
+ExecReload=/bin/kill -s HUP \$MAINPID
+TimeoutSec=0
+RestartSec=2
+Restart=always
+StartLimitBurst=3
+StartLimitInterval=60s
+LimitNOFILE=infinity
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+Delegate=yes
+KillMode=process
+
+[Install]
+WantedBy=default.target
+EOT
+	systemctl --user daemon-reload
+	fi
+	if ! systemctl --user status docker ; then
+		systemctl --user start docker
+	fi
+	systemctl --user status docker
+}
+
+nonsystemd_fallback() {
+	echo "this is nonsystemd backup"
+	exit 1
+}
+
+print_instructions() {
+	check_systemd
+	echo "# Docker binaries are installed in $BIN"
+	if [ "$(which $DAEMON)" != "$BIN/$DAEMON" ]; then
+		echo "# WARN: dockerd is not in your current PATH or pointing to $BIN/$DAEMON"
+	fi
+	echo "# Please make sure following environment variables are set (or put them to ~/.bashrc):\n"
+	
+	echo "export PATH=$BIN:\$PATH"
+	echo "export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock"
+	exit 0
 }
 
 do_install() {
@@ -92,8 +166,8 @@ do_install() {
 	(
 		mkdir -p "$BIN"
 		cd "$BIN"
-		tar zxf "$tmp/docker.tgz"
-		tar zxf "$tmp/rootless.tgz"
+		tar zxf "$tmp/docker.tgz" --strip-components=1
+		tar zxf "$tmp/rootless.tgz" --strip-components=1
 	)
 
 
@@ -105,8 +179,7 @@ do_install() {
 # Print out instructions for $DOCKER_HOST and recommendation for adding it to bashrc
 # Print out the location for storage/graphdriver that is being used
 
-	echo "not implemented yet"
-	exit 1
+	print_instructions
 }
 
 do_install
