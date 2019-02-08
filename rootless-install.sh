@@ -25,7 +25,10 @@ init_vars() {
 	if lsb_release -ds | grep -qi ubuntu 2>&1 2>/dev/null; then
 		driver="overlay2"
 	fi
-	SYSTEMD="$(which systemd 2>&1 2>/dev/null)"
+	SYSTEMD=
+	if which systemd 2>&1 >/dev/null; then
+		SYSTEMD=1
+	fi
 }
 
 checks() {
