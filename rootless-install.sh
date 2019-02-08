@@ -129,6 +129,7 @@ LimitNPROC=infinity
 LimitCORE=infinity
 TasksMax=infinity
 Delegate=yes
+Type=simple
 
 [Install]
 WantedBy=default.target
@@ -139,7 +140,7 @@ EOT
 		echo "# starting systemd service"
 		systemctl --user start docker
 	fi
-	systemctl --user status docker
+	systemctl --user status docker | cat
 }
 
 service_instructions() {
@@ -173,7 +174,7 @@ print_instructions() {
 	
 	case :$PATH: in
 	*:$BIN:*) ;;
-		    *) echo "export PATH=$BIN:\$PATH" ;;
+	*) echo "export PATH=$BIN:\$PATH" ;;
 	esac
 
 	echo "export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock"
