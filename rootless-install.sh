@@ -17,15 +17,21 @@ SCRIPT_COMMIT_SHA=UNKNOWN
 
 
 # TODO:
-set -e
 
-BIN="$HOME/bin"
-DAEMON=dockerd
-
-driver="vfs"
-if lsb_release -ds | grep -i ubuntu 2>&1 2>/dev/null; then
-	driver="overlay"
-fi
+init_vars() {
+	BIN="$HOME/bin"
+	DAEMON=dockerd
+	driver="vfs"
+	if lsb_release -ds | grep -i ubuntu 2>&1 2>/dev/null; then
+		driver="overlay2"
+	fi
+	runtime_dir="$XDG_RUNTIME_DIR"
+	[ -d "$runtime_dir" ] || runtime_dir="/run/user/$(id -u)"
+	if [ -d "$runtime_dir" ]; then
+		runtime_dir="/tmp/docker-rootless-$(id -u)"
+		mkdir -p "$runtime_dir"
+	fi
+}
 
 checks() {
 	# OS verification: Linux only, point osx/win to helpful locations
@@ -48,15 +54,19 @@ checks() {
 	fi
 
 	if [ -d "$BIN" ]; then
-		if ! test -w "$BIN" ; then
+		if [ ! -w "$BIN" ]; then
 			>&2 echo "Aborting because $BIN is not writable"; exit 1
 		fi
 	else
-		if ! test -w "$HOME" ; then
+		if [ ! -w "$HOME" ]; then
 			>&2 echo "Aborting because $HOME is not writable"; exit 1
 		fi
 	fi
-	
+
+	if [ ! -w "$runtime_dir" ]; then
+		>&2 echo "Aborting because $runtime_dir is not writable"; exit 1
+	fi
+
 	# Already installed verification (unless force?). Only having docker cli binary previously shouldn't fail the build.
 	if [ -f "$BIN/$DAEMON" ]; then
 		# If rootless installation is detected print out the modified PATH and DOCKER_HOST that needs to be set.
@@ -65,14 +75,9 @@ checks() {
 	fi
 
 	# Existing rootful docker verification
-	ROOTFUL="$(which $DAEMON)"
-	#if [ -n "$ROOTFUL" ]; then
-	#	UID=$(ls -lnd "$ROOTFUL" | cut -d' ' -f4)
-	#	if [ "$UID" = "0" ]; then
-	#		>&2 echo "Existing rootful Docker detected"
-	#		exit 1
-	#	fi
-	#fi
+	if [ -w /var/run/docker.sock ]; then
+		>&2 echo "Aborting because rootful Docker is running and accessible"; exit 1
+	fi
 
 	# Verify kernel
 	# Verify newuidmap/newgidmap
@@ -90,7 +95,7 @@ checks() {
 	# On errors print the commands that user needs to run (ideally together). The commands need to be run with sudo.
 }
 
-check_systemd() {
+start_docker() {
 	if !which systemd 2>&1 2>/dev/null; then
 		nonsystemd_fallback
 		return
@@ -154,25 +159,28 @@ EOT
 }
 
 print_instructions() {
-	check_systemd
 	echo "# Docker binaries are installed in $BIN"
 	if [ "$(which $DAEMON)" != "$BIN/$DAEMON" ]; then
 		echo "# WARN: dockerd is not in your current PATH or pointing to $BIN/$DAEMON"
 	fi
 	echo "# Please make sure following environment variables are set (or put them to ~/.bashrc):\n"
 	
-	echo "export PATH=$BIN:\$PATH"
-	echo "export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock"
-	echo ""
+	case :$PATH: in
+	*:$HOME/bin:*) ;;
+		    *) echo "export PATH=$BIN:\$PATH" ;;
+	esac
+
+	echo "export DOCKER_HOST=unix://$runtime_dir/docker.sock"
+	echo
 	shutdown_instructions
 	exit 0
 }
 
 do_install() {
+	init_vars
 	checks
+
 	set -e
-
-
 	tmp=$(mktemp -d)
 	trap "rm -rf $tmp" EXIT
 	# TODO: Find latest nightly release from https://download.docker.com/linux/static/nightly/ . Later we can provide different channels.
@@ -194,10 +202,13 @@ do_install() {
 		tar zxf "$tmp/rootless.tgz" --strip-components=1
 	)
 
+	start_docker
 
 # If user has systemd setup a `docker.service` with `systemctl --user` and start it.
 # If not then print the command for launching the daemon and putting it on background.
 # Test that the daemon works with `docker info`
+
+	docker info
 
 # If $HOME/bin is not in PATH print out command for changing it.
 # Print out instructions for $DOCKER_HOST and recommendation for adding it to bashrc
