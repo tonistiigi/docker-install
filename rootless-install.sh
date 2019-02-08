@@ -22,15 +22,10 @@ init_vars() {
 	BIN="$HOME/bin"
 	DAEMON=dockerd
 	driver="vfs"
-	if lsb_release -ds | grep -i ubuntu 2>&1 2>/dev/null; then
+	if lsb_release -ds | grep -qi ubuntu 2>&1 2>/dev/null; then
 		driver="overlay2"
 	fi
-	runtime_dir="$XDG_RUNTIME_DIR"
-	[ -d "$runtime_dir" ] || runtime_dir="/run/user/$(id -u)"
-	if [ -d "$runtime_dir" ]; then
-		runtime_dir="/tmp/docker-rootless-$(id -u)"
-		mkdir -p "$runtime_dir"
-	fi
+	SYSTEMD="$(which systemd 2>&1 2>/dev/null)"
 }
 
 checks() {
@@ -59,25 +54,36 @@ checks() {
 		fi
 	else
 		if [ ! -w "$HOME" ]; then
-			>&2 echo "Aborting because $HOME is not writable"; exit 1
+			>&2 echo "Aborting because HOME (\"$HOME\") is not writable"; exit 1
 		fi
-	fi
-
-	if [ ! -w "$runtime_dir" ]; then
-		>&2 echo "Aborting because $runtime_dir is not writable"; exit 1
-	fi
-
-	# Already installed verification (unless force?). Only having docker cli binary previously shouldn't fail the build.
-	if [ -f "$BIN/$DAEMON" ]; then
-		# If rootless installation is detected print out the modified PATH and DOCKER_HOST that needs to be set.
-		echo "# Existing rootless Docker detected at $BIN/$DAEMON"
-		print_instructions
 	fi
 
 	# Existing rootful docker verification
 	if [ -w /var/run/docker.sock ]; then
 		>&2 echo "Aborting because rootful Docker is running and accessible"; exit 1
 	fi
+
+
+	if [ ! -w "$XDG_RUNTIME_DIR" ]; then
+		if [ -n "$SYSTEMD" ]; then
+			>&2 echo "Aborting because systemd was detected but XDG_RUNTIME_DIR (\"$XDG_RUNTIME_DIR\") does not exist or is not writable"
+			>&2 echo "Hint: this could happen if you changed users with 'su' or 'sudo'. To work around this:"
+			>&2 echo "- try again by first running with root privileges 'loginctl enable-linger <user>' where <user> is the unprivileged user and export XDG_RUNTIME_DIR to the value of RuntimePath as shown by 'loginctl show-user <user>'"
+			>&2 echo "- or simply log back in as the desired unprivileged user (ssh works for remote machines)"
+			exit 1
+		fi
+		export XDG_RUNTIME_DIR="/tmp/docker-rootless-$(id -u)"
+		mkdir -p "$XDG_RUNTIME_DIR"
+	fi
+
+	# Already installed verification (unless force?). Only having docker cli binary previously shouldn't fail the build.
+	if [ -x "$BIN/$DAEMON" ]; then
+		# If rootless installation is detected print out the modified PATH and DOCKER_HOST that needs to be set.
+		echo "# Existing rootless Docker detected at $BIN/$DAEMON"
+		print_instructions
+	fi
+
+
 
 	# Verify kernel
 	# Verify newuidmap/newgidmap
@@ -96,8 +102,8 @@ checks() {
 }
 
 start_docker() {
-	if !which systemd 2>&1 2>/dev/null; then
-		nonsystemd_fallback
+	if [ -z "$SYSTEMD" ]; then
+		start_docker_nonsystemd
 		return
 	fi
 	
@@ -129,15 +135,15 @@ WantedBy=default.target
 EOT
 	systemctl --user daemon-reload
 	fi
-	if ! systemctl --user status docker ; then
+	if ! systemctl --user status docker 2>&1 >/dev/null; then
 		echo "# starting systemd service"
 		systemctl --user start docker
 	fi
 	systemctl --user status docker
 }
 
-shutdown_instructions() {
-	if !which systemd 2>&1 2>/dev/null; then
+service_instructions() {
+	if [ -z "$SYSTEMD" ]; then
 		return
 	fi
 	cat <<EOT
@@ -149,11 +155,11 @@ EOT
 }
 
 
-nonsystemd_fallback() {
+start_docker_nonsystemd() {
 	echo <<EOT
 # systemd not detected, dockerd daemon needs to be started manually
 #
-$HOME/bin/dockerd-rootless.sh --experimental --iptables=false --storage-driver $driver
+$BIN/dockerd-rootless.sh --experimental --iptables=false --storage-driver $driver
 #
 EOT
 }
@@ -166,13 +172,13 @@ print_instructions() {
 	echo "# Please make sure following environment variables are set (or put them to ~/.bashrc):\n"
 	
 	case :$PATH: in
-	*:$HOME/bin:*) ;;
+	*:$BIN:*) ;;
 		    *) echo "export PATH=$BIN:\$PATH" ;;
 	esac
 
-	echo "export DOCKER_HOST=unix://$runtime_dir/docker.sock"
+	echo "export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock"
 	echo
-	shutdown_instructions
+	service_instructions
 	exit 0
 }
 
@@ -182,7 +188,7 @@ do_install() {
 
 	set -e
 	tmp=$(mktemp -d)
-	trap "rm -rf $tmp" EXIT
+	trap "rm -rf $tmp" EXIT INT TERM
 	# TODO: Find latest nightly release from https://download.docker.com/linux/static/nightly/ . Later we can provide different channels.
 	# Test locations:
 	STATIC_RELEASE_URL="https://www.dropbox.com/s/tczf5n5m7v1ku2k/docker-0.0.0-20190205170806-273aef0a90.tgz"
