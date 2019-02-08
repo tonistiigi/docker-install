@@ -218,7 +218,7 @@ do_install() {
 # If not then print the command for launching the daemon and putting it on background.
 # Test that the daemon works with `docker info`
 
-	docker info
+	DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock $BIN/docker version
 
 # If $HOME/bin is not in PATH print out command for changing it.
 # Print out instructions for $DOCKER_HOST and recommendation for adding it to bashrc
