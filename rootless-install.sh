@@ -212,21 +212,21 @@ do_install() {
 		tar zxf "$tmp/rootless.tgz" --strip-components=1
 	)
 
-	start_docker
 
+	local OLDPATH="$PATH"
+	export PATH="$BIN:$PATH"
+	start_docker
 # If user has systemd setup a `docker.service` with `systemctl --user` and start it.
 # If not then print the command for launching the daemon and putting it on background.
 # Test that the daemon works with `docker info`
 
-	(
-		export PATH=$BIN:$PATH
-		DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock docker version
-	)
+	DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock docker version
 
 # If $HOME/bin is not in PATH print out command for changing it.
 # Print out instructions for $DOCKER_HOST and recommendation for adding it to bashrc
 # Print out the location for storage/graphdriver that is being used
 
+	export PATH="$OLDPATH"
 	print_instructions
 }
 
