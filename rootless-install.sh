@@ -106,15 +106,15 @@ sysctl --system"
 	if [ -n "$INSTRUCTIONS" ]; then
 		echo "# Missing system requirements. Please run following commands to
 # install the requirements and run this installer again"
-		
-		echo 
+
+		echo
 		echo "cat <<EOF | sudo sh -x"
 		echo "$INSTRUCTIONS"
 		echo "EOF"
 		echo
 		exit 1
 	fi
-	
+
 	if ! grep "$(id -un)" /etc/subuid 2>&1 >/dev/null; then
 		echo "Could not find records for the current user $(id -un) from /etc/subuid . Please make sure valid subuid range is set there."
 		exit 1
@@ -128,12 +128,12 @@ sysctl --system"
 start_docker() {
 	tmpdir=$(mktemp -d)
 	mkdir -p $tmpdir/lower $tmpdir/upper $tmpdir/work $tmpdir/merged
-	if $BIN/rootlesskit mount -t overlay overlay -olowerdir=$tmpdir/lower,upperdir=$tmpdir/upper,workdir=$tmpdir/work $tmpdir/merged >/dev/null 2>&1; then
+	if "$BIN"/rootlesskit mount -t overlay overlay -olowerdir=$tmpdir/lower,upperdir=$tmpdir/upper,workdir=$tmpdir/work $tmpdir/merged >/dev/null 2>&1; then
 		USE_OVERLAY=1
 	fi
-	rm -r $tmpdir
-		
-	
+	rm -rf "$tmpdir"
+
+
 	if [ -z "$SYSTEMD" ]; then
 		start_docker_nonsystemd
 		return
@@ -259,15 +259,8 @@ do_install() {
 
 	local OLDPATH="$PATH"
 	export PATH="$BIN:$PATH"
-# If user has systemd setup a `docker.service` with `systemctl --user` and start it.
-# If not then print the command for launching the daemon and putting it on background.
-# Test that the daemon works with `docker info`
 
-	DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock docker version
-
-# If $HOME/bin is not in PATH print out command for changing it.
-# Print out instructions for $DOCKER_HOST and recommendation for adding it to bashrc
-# Print out the location for storage/graphdriver that is being used
+	DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock" docker version
 
 	export PATH="$OLDPATH"
 }
