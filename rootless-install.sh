@@ -86,18 +86,19 @@ checks() {
 
 	if ! ( which newuidmap >/dev/null 2>&1 && test -u $(which newuidmap) ); then
 		if which apt-get >/dev/null 2>&1; then
-			INSTRUCTIONS='apt-get install -y uidmap\n'
+			INSTRUCTIONS="apt-get install -y uidmap"
 		elif which dnf >/dev/null 2>&1; then
-			INSTRUCTIONS='dnf install -y shadow-utils\n'
+			INSTRUCTIONS="dnf install -y shadow-utils"
 		else
 			echo "Missing newuidmap or no setuid bit set. Please install with a package manager."
-			echo 1
+			exit 1
 		fi
 	fi
 	
 	if [ -f /proc/sys/kernel/unprivileged_userns_clone ]; then
 		if [ "1" != "$(cat /proc/sys/kernel/unprivileged_userns_clone)" ]; then
-			INSTRUCTIONS="${INSTRUCTIONS}cat <<EOT > /etc/sysctl.d/50-rootless.conf
+			INSTRUCTIONS="${INSTRUCTIONS}
+cat <<EOT > /etc/sysctl.d/50-rootless.conf
 kernel.unprivileged_userns_clone = 1
 EOT
 sysctl --system"
