@@ -79,6 +79,7 @@ checks() {
 		# If rootless installation is detected print out the modified PATH and DOCKER_HOST that needs to be set.
 		echo "# Existing rootless Docker detected at $BIN/$DAEMON"
 		print_instructions
+		exit 0
 	fi
 
 	INSTRUCTIONS=
@@ -226,14 +227,12 @@ print_instructions() {
 	echo "export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock"
 	echo
 	service_instructions
-	exit 0
 }
 
 do_install() {
 	init_vars
 	checks
 
-	set -e
 	tmp=$(mktemp -d)
 	trap "rm -rf $tmp" EXIT INT TERM
 	# TODO: Find latest nightly release from https://download.docker.com/linux/static/nightly/ . Later we can provide different channels.
@@ -257,12 +256,8 @@ do_install() {
 
 	print_instructions
 
-	local OLDPATH="$PATH"
-	export PATH="$BIN:$PATH"
-
-	DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock" docker version
-
-	export PATH="$OLDPATH"
+	sleep 1
+	PATH="$BIN:$PATH" DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock" docker version
 }
 
 do_install
