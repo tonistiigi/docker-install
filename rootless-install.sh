@@ -21,7 +21,7 @@ init_vars() {
 	BIN="$HOME/bin"
 	DAEMON=dockerd
 	SYSTEMD=
-	if which systemctl 2>&1 >/dev/null; then
+	if which systemctl >/dev/null 2>&1; then
 		SYSTEMD=1
 	fi
 }
@@ -83,10 +83,10 @@ checks() {
 
 	INSTRUCTIONS=
 
-	if ! ( which newuidmap 2>&1 >/dev/null && test -u $(which newuidmap) ); then
-		if which apt-get 2>&1 >/dev/null; then
+	if ! ( which newuidmap >/dev/null 2>&1 && test -u $(which newuidmap) ); then
+		if which apt-get >/dev/null 2>&1; then
 			INSTRUCTIONS='apt-get install -y uidmap\n'
-		elif which dnf 2>&1 >/dev/null; then
+		elif which dnf >/dev/null 2>&1; then
 			INSTRUCTIONS='dnf install -y shadow-utils\n'
 		else
 			echo "Missing newuidmap or no setuid bit set. Please install with a package manager."
@@ -115,12 +115,12 @@ sysctl --system"
 		exit 1
 	fi
 
-	if ! grep "$(id -un)" /etc/subuid 2>&1 >/dev/null; then
-		echo "Could not find records for the current user $(id -un) from /etc/subuid . Please make sure valid subuid range is set there."
+	if ! grep "$(id -un)" /etc/subuid >/dev/null 2>&1; then
+		>&2 echo "Could not find records for the current user $(id -un) from /etc/subuid . Please make sure valid subuid range is set there."
 		exit 1
 	fi
-	if ! grep "$(id -gn)" /etc/subgid 2>&1 >/dev/null; then
-		echo "Could not find records for the current user $(id -un) from /etc/subgid . Please make sure valid subuid range is set there."
+	if ! grep "$(id -gn)" /etc/subgid >/dev/null 2>&1; then
+		>&2 echo "Could not find records for the current user $(id -un) from /etc/subgid . Please make sure valid subuid range is set there."
 		exit 1
 	fi
 }
@@ -181,7 +181,7 @@ WantedBy=default.target
 EOT
 	systemctl --user daemon-reload
 	fi
-	if ! systemctl --user status docker 2>&1 >/dev/null; then
+	if ! systemctl --user status docker >/dev/null 2>&1; then
 		echo "# starting systemd service"
 		systemctl --user start docker
 	fi
