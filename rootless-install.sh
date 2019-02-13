@@ -15,18 +15,13 @@ SCRIPT_COMMIT_SHA=UNKNOWN
 
 # This script should be run with an unprivileged user and install/setup Docker under $HOME/bin/.
 
-
-# TODO:
+set -e
 
 init_vars() {
 	BIN="$HOME/bin"
 	DAEMON=dockerd
-	driver="vfs"
-	if lsb_release -ds | grep -qi ubuntu 2>&1 2>/dev/null; then
-		driver="overlay2"
-	fi
 	SYSTEMD=
-	if which systemd 2>&1 >/dev/null; then
+	if which systemctl 2>&1 >/dev/null; then
 		SYSTEMD=1
 	fi
 }
@@ -86,31 +81,78 @@ checks() {
 		print_instructions
 	fi
 
+	INSTRUCTIONS=
 
-
-	# Verify kernel
-	# Verify newuidmap/newgidmap
-	# Verify /etc/subuid
-	# Verify /proc/sys/kernel/unprivileged_userns_clone
+	if ! ( which newuidmap 2>&1 >/dev/null && test -u $(which newuidmap) ); then
+		if which apt-get 2>&1 >/dev/null; then
+			INSTRUCTIONS='apt-get install -y uidmap\n'
+		elif which dnf 2>&1 >/dev/null; then
+			INSTRUCTIONS='dnf install -y shadow-utils\n'
+		else
+			echo "Missing newuidmap or no setuid bit set. Please install with a package manager."
+			echo 1
+		fi
+	fi
 	
+	if [ -f /proc/sys/kernel/unprivileged_userns_clone ]; then
+		if [ "1" != "$(cat /proc/sys/kernel/unprivileged_userns_clone)" ]; then
+			INSTRUCTIONS="${INSTRUCTIONS}cat <<EOT > /etc/sysctl.d/50-rootless.conf
+kernel.unprivileged_userns_clone = 1
+EOT
+sysctl --system"
+		fi
+	fi
 
-# cat <<EOF | sudo sh -x
-# 	cat <<EOT > /etc/sysctl.d/50-rootless.conf
-# 	kernel.unprivileged_userns_clone = 1
-# EOT
-# 	sysctl --system
-# EOF
-
-	# On errors print the commands that user needs to run (ideally together). The commands need to be run with sudo.
+	if [ -n "$INSTRUCTIONS" ]; then
+		echo "# Missing system requirements. Please run following commands to
+# install the requirements and run this installer again"
+		
+		echo 
+		echo "cat <<EOF | sudo sh -x"
+		echo "$INSTRUCTIONS"
+		echo "EOF"
+		echo
+		exit 1
+	fi
+	
+	if ! grep "$(id -un)" /etc/subuid 2>&1 >/dev/null; then
+		echo "Could not find records for the current user $(id -un) from /etc/subuid . Please make sure valid subuid range is set there."
+		exit 1
+	fi
+	if ! grep "$(id -gn)" /etc/subgid 2>&1 >/dev/null; then
+		echo "Could not find records for the current user $(id -un) from /etc/subgid . Please make sure valid subuid range is set there."
+		exit 1
+	fi
 }
 
 start_docker() {
+	tmpdir=$(mktemp -d)
+	mkdir -p $tmpdir/lower $tmpdir/upper $tmpdir/work $tmpdir/merged
+	if $BIN/rootlesskit mount -t overlay overlay -olowerdir=$tmpdir/lower,upperdir=$tmpdir/upper,workdir=$tmpdir/work $tmpdir/merged >/dev/null 2>&1; then
+		USE_OVERLAY=1
+	fi
+	rm -r $tmpdir
+		
+	
 	if [ -z "$SYSTEMD" ]; then
 		start_docker_nonsystemd
 		return
 	fi
 	
 	mkdir -p $HOME/.config/systemd/user
+	
+	DOCKERD_FLAGS="--experimental"
+	
+	if ! which iptables >/dev/null 2>&1 ; then
+		DOCKERD_FLAGS="$DOCKERD_FLAGS --iptables=false"
+	fi
+	
+	if [ "$USE_OVERLAY" = "1" ]; then
+		DOCKERD_FLAGS="$DOCKERD_FLAGS --storage-driver=overlay"
+	else
+		DOCKERD_FLAGS="$DOCKERD_FLAGS --storage-driver=vfs"
+	fi
+	
 	
 	if [ ! -f $HOME/.config/systemd/user/docker.service ]; then
 		cat <<EOT > $HOME/.config/systemd/user/docker.service
@@ -120,7 +162,7 @@ Documentation=https://docs.docker.com
 
 [Service]
 Environment=PATH=$HOME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=$HOME/bin/dockerd-rootless.sh --experimental --iptables=false --storage-driver $driver
+ExecStart=$HOME/bin/dockerd-rootless.sh $DOCKERD_FLAGS
 ExecReload=/bin/kill -s HUP \$MAINPID
 TimeoutSec=0
 RestartSec=2
@@ -169,6 +211,7 @@ EOT
 }
 
 print_instructions() {
+	start_docker
 	echo "# Docker binaries are installed in $BIN"
 	if [ "$(which $DAEMON)" != "$BIN/$DAEMON" ]; then
 		echo "# WARN: dockerd is not in your current PATH or pointing to $BIN/$DAEMON"
@@ -201,8 +244,8 @@ do_install() {
 	# Download tarballs docker-* and docker-rootless-extras=*
 	(
 		cd "$tmp"
-		curl -sSL -o docker.tgz "$STATIC_RELEASE_URL"
-		curl -sSL -o rootless.tgz "$STATIC_RELEASE_ROOTLESS_URL"
+		curl -L -o docker.tgz "$STATIC_RELEASE_URL"
+		curl -L -o rootless.tgz "$STATIC_RELEASE_ROOTLESS_URL"
 	)
 	# Extract under $HOME/bin/
 	(
@@ -212,10 +255,10 @@ do_install() {
 		tar zxf "$tmp/rootless.tgz" --strip-components=1
 	)
 
+	print_instructions
 
 	local OLDPATH="$PATH"
 	export PATH="$BIN:$PATH"
-	start_docker
 # If user has systemd setup a `docker.service` with `systemctl --user` and start it.
 # If not then print the command for launching the daemon and putting it on background.
 # Test that the daemon works with `docker info`
@@ -227,7 +270,6 @@ do_install() {
 # Print out the location for storage/graphdriver that is being used
 
 	export PATH="$OLDPATH"
-	print_instructions
 }
 
 do_install
