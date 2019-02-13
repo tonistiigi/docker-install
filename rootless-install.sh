@@ -84,13 +84,13 @@ checks() {
 
 	INSTRUCTIONS=
 
-	if ! ( which newuidmap >/dev/null 2>&1 && test -u $(which newuidmap) ); then
+	if ! which newuidmap >/dev/null 2>&1; then
 		if which apt-get >/dev/null 2>&1; then
 			INSTRUCTIONS="apt-get install -y uidmap"
 		elif which dnf >/dev/null 2>&1; then
 			INSTRUCTIONS="dnf install -y shadow-utils"
 		else
-			echo "Missing newuidmap or no setuid bit set. Please install with a package manager."
+			echo "Missing newuidmap binary found. Please install with a package manager."
 			exit 1
 		fi
 	fi
@@ -117,11 +117,11 @@ sysctl --system"
 		exit 1
 	fi
 
-	if ! grep "$(id -un)" /etc/subuid >/dev/null 2>&1; then
+	if ! grep "^$(id -un):\|^$(id -u):" /etc/subuid >/dev/null 2>&1; then
 		>&2 echo "Could not find records for the current user $(id -un) from /etc/subuid . Please make sure valid subuid range is set there."
 		exit 1
 	fi
-	if ! grep "$(id -gn)" /etc/subgid >/dev/null 2>&1; then
+	if ! grep "^$(id -un):\|^$(id -u):" /etc/subgid >/dev/null 2>&1; then
 		>&2 echo "Could not find records for the current user $(id -un) from /etc/subgid . Please make sure valid subuid range is set there."
 		exit 1
 	fi
