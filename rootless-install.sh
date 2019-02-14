@@ -37,7 +37,7 @@ checks() {
 	esac
 
 	# User verification: deny running as root (unless forced?)
-	if [ "$(id -u)" = "0" ]; then
+	if [ "$(id -u)" = "0" ] && [ -z "$FORCE_ROOTLESS_INSTALL" ]; then
 		>&2 echo "Refusing to install rootless Docker as the root user"; exit 1
 	fi
 
@@ -57,8 +57,8 @@ checks() {
 	fi
 
 	# Existing rootful docker verification
-	if [ -w /var/run/docker.sock ]; then
-		>&2 echo "Aborting because rootful Docker is running and accessible"; exit 1
+	if [ -w /var/run/docker.sock ] && [ -z "$FORCE_ROOTLESS_INSTALL" ]; then
+		>&2 echo "Aborting because rootful Docker is running and accessible. Set FORCE_ROOTLESS_INSTALL=1 to ignore."; exit 1
 	fi
 
 
@@ -72,6 +72,7 @@ checks() {
 		fi
 		export XDG_RUNTIME_DIR="/tmp/docker-rootless-$(id -u)"
 		mkdir -p "$XDG_RUNTIME_DIR"
+		XDG_RUNTIME_DIR_CREATED=1
 	fi
 
 	# Already installed verification (unless force?). Only having docker cli binary previously shouldn't fail the build.
@@ -237,6 +238,10 @@ print_instructions() {
 	fi
 	echo "# Please make sure following environment variables are set (or put them to ~/.bashrc):\n"
 	
+	if [ -n "$XDG_RUNTIME_DIR_CREATED" ]; then
+		echo "export XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
+	fi
+
 	case :$PATH: in
 	*:$BIN:*) ;;
 	*) echo "export PATH=$BIN:\$PATH" ;;
