@@ -89,17 +89,30 @@ checks() {
 			INSTRUCTIONS="apt-get install -y uidmap"
 		elif which dnf >/dev/null 2>&1; then
 			INSTRUCTIONS="dnf install -y shadow-utils"
+		elif which yum >/dev/null 2>&1; then
+			INSTRUCTIONS="curl -o /etc/yum.repos.d/vbatts-shadow-utils-newxidmap-epel-7.repo https://copr.fedorainfracloud.org/coprs/vbatts/shadow-utils-newxidmap/repo/epel-7/vbatts-shadow-utils-newxidmap-epel-7.repo
+yum install -y shadow-utils46-newxidmap"
 		else
 			echo "Missing newuidmap binary found. Please install with a package manager."
 			exit 1
 		fi
 	fi
-	
+
 	if [ -f /proc/sys/kernel/unprivileged_userns_clone ]; then
 		if [ "1" != "$(cat /proc/sys/kernel/unprivileged_userns_clone)" ]; then
 			INSTRUCTIONS="${INSTRUCTIONS}
 cat <<EOT > /etc/sysctl.d/50-rootless.conf
 kernel.unprivileged_userns_clone = 1
+EOT
+sysctl --system"
+		fi
+	fi
+
+	if [ -f /proc/sys/user/max_user_namespaces ]; then
+		if [ "0" = "$(cat /proc/sys/user/max_user_namespaces)" ]; then
+			INSTRUCTIONS="${INSTRUCTIONS}
+cat <<EOT > /etc/sysctl.d/51-rootless.conf
+user.max_user_namespaces = 28633
 EOT
 sysctl --system"
 		fi
@@ -118,11 +131,15 @@ sysctl --system"
 	fi
 
 	if ! grep "^$(id -un):\|^$(id -u):" /etc/subuid >/dev/null 2>&1; then
-		>&2 echo "Could not find records for the current user $(id -un) from /etc/subuid . Please make sure valid subuid range is set there."
+		>&2 echo "Could not find records for the current user $(id -un) from /etc/subuid . Please make sure valid subuid range is set there.
+For example:
+echo \"$(id -un):100000:65536\" >> /etc/subuid"
 		exit 1
 	fi
 	if ! grep "^$(id -un):\|^$(id -u):" /etc/subgid >/dev/null 2>&1; then
-		>&2 echo "Could not find records for the current user $(id -un) from /etc/subgid . Please make sure valid subuid range is set there."
+		>&2 echo "Could not find records for the current user $(id -un) from /etc/subgid . Please make sure valid subuid range is set there.
+For example:
+echo \"$(id -un):100000:65536\" >> /etc/subgid"
 		exit 1
 	fi
 }
