@@ -21,7 +21,7 @@ init_vars() {
 	BIN="$HOME/bin"
 	DAEMON=dockerd
 	SYSTEMD=
-	if which systemctl >/dev/null 2>&1; then
+	if systemctl --user daemon-reload >/dev/null 2>&1; then
 		SYSTEMD=1
 	fi
 }
@@ -179,7 +179,7 @@ Delegate=yes
 Type=simple
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 EOT
 	systemctl --user daemon-reload
 	fi
@@ -204,11 +204,11 @@ EOT
 
 
 start_docker_nonsystemd() {
-	echo <<EOT
+	cat <<EOT
 # systemd not detected, dockerd daemon needs to be started manually
-#
-$BIN/dockerd-rootless.sh --experimental --iptables=false --storage-driver $driver
-#
+
+$BIN/dockerd-rootless.sh --experimental --iptables=false --storage-driver vfs
+
 EOT
 }
 
