@@ -258,10 +258,9 @@ do_install() {
 
 	tmp=$(mktemp -d)
 	trap "rm -rf $tmp" EXIT INT TERM
-	# TODO: Find latest nightly release from https://download.docker.com/linux/static/nightly/ . Later we can provide different channels.
-	# Test locations:
-	STATIC_RELEASE_URL="https://www.dropbox.com/s/tczf5n5m7v1ku2k/docker-0.0.0-20190205170806-273aef0a90.tgz"
-	STATIC_RELEASE_ROOTLESS_URL="https://www.dropbox.com/s/gkvw3gxwlpnxl6f/docker-rootless-extras-0.0.0-20190205170806-273aef0a90.tgz"
+	# Alternatively could find latest nightly release from https://download.docker.com/linux/static/nightly/ . Later we can provide different channels.
+	STATIC_RELEASE_URL="https://master.dockerproject.org/linux/x86_64/docker.tgz"
+	STATIC_RELEASE_ROOTLESS_URL="https://master.dockerproject.org/linux/x86_64/docker-rootless-extras.tgz"
 
 	# Download tarballs docker-* and docker-rootless-extras=*
 	(
