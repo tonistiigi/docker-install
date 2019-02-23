@@ -61,7 +61,7 @@ checks() {
 		>&2 echo "Aborting because rootful Docker is running and accessible. Set FORCE_ROOTLESS_INSTALL=1 to ignore."; exit 1
 	fi
 
-
+	# Validate XDG_RUNTIME_DIR
 	if [ ! -w "$XDG_RUNTIME_DIR" ]; then
 		if [ -n "$SYSTEMD" ]; then
 			>&2 echo "Aborting because systemd was detected but XDG_RUNTIME_DIR (\"$XDG_RUNTIME_DIR\") does not exist or is not writable"
@@ -85,6 +85,7 @@ checks() {
 
 	INSTRUCTIONS=
 
+	# uidmap dependency check
 	if ! which newuidmap >/dev/null 2>&1; then
 		if which apt-get >/dev/null 2>&1; then
 			INSTRUCTIONS="apt-get install -y uidmap"
@@ -99,6 +100,7 @@ yum install -y shadow-utils46-newxidmap"
 		fi
 	fi
 
+	# iptables dependency check
 	if [ -z "$SKIP_IPTABLES" ] && ! which iptables >/dev/null 2>&1 && [ ! -f /sbin/iptables ] && [ ! -f /usr/sbin/iptables ]; then
 		if which apt-get >/dev/null 2>&1; then
 			INSTRUCTIONS="${INSTRUCTIONS}
@@ -111,12 +113,14 @@ dnf install -y iptables"
 			exit 1
 		fi
 	fi
-	=
+	
+	# ip_tables module dependency check
 	if [ -z "$SKIP_IPTABLES" ] && ! lsmod | grep ip_tables >/dev/null 2>&1 && ! cat /lib/modules/$(uname -r)/modules.builtin | grep ip_tables >/dev/null 2>&1; then
 			INSTRUCTIONS="${INSTRUCTIONS}
 modprobe ip_tables"
 	fi
 
+	# debian requires setting unprivileged_userns_clone
 	if [ -f /proc/sys/kernel/unprivileged_userns_clone ]; then
 		if [ "1" != "$(cat /proc/sys/kernel/unprivileged_userns_clone)" ]; then
 			INSTRUCTIONS="${INSTRUCTIONS}
@@ -127,6 +131,7 @@ sysctl --system"
 		fi
 	fi
 
+	# centos requires setting max_user_namespaces
 	if [ -f /proc/sys/user/max_user_namespaces ]; then
 		if [ "0" = "$(cat /proc/sys/user/max_user_namespaces)" ]; then
 			INSTRUCTIONS="${INSTRUCTIONS}
@@ -150,6 +155,7 @@ sysctl --system"
 		exit 1
 	fi
 
+	# validate subuid/subgid files for current user
 	if ! grep "^$(id -un):\|^$(id -u):" /etc/subuid >/dev/null 2>&1; then
 		>&2 echo "Could not find records for the current user $(id -un) from /etc/subuid . Please make sure valid subuid range is set there.
 For example:
@@ -165,6 +171,7 @@ echo \"$(id -un):100000:65536\" >> /etc/subgid"
 }
 
 start_docker() {
+	# detect if overlay is supported (ubuntu)
 	tmpdir=$(mktemp -d)
 	mkdir -p $tmpdir/lower $tmpdir/upper $tmpdir/work $tmpdir/merged
 	if "$BIN"/rootlesskit mount -t overlay overlay -olowerdir=$tmpdir/lower,upperdir=$tmpdir/upper,workdir=$tmpdir/work $tmpdir/merged >/dev/null 2>&1; then
@@ -273,6 +280,7 @@ print_instructions() {
 	*) echo "export PATH=$BIN:\$PATH" ;;
 	esac
 
+	# iptables is required but /sbin might not be in PATH
 	if [ -z "$SKIP_IPTABLES" ] && ! which iptables >/dev/null 2>&1; then
 		if [ -f /sbin/iptables ]; then
 			echo "export PATH=\$PATH:/sbin"
@@ -292,7 +300,8 @@ do_install() {
 
 	tmp=$(mktemp -d)
 	trap "rm -rf $tmp" EXIT INT TERM
-	# Alternatively could find latest nightly release from https://download.docker.com/linux/static/nightly/ . Later we can provide different channels.
+	# Alternatively could find latest nightly release from https://download.docker.com/linux/static/nightly/ .
+	# Later we can provide different channels.
 	STATIC_RELEASE_URL="https://master.dockerproject.org/linux/x86_64/docker.tgz"
 	STATIC_RELEASE_ROOTLESS_URL="https://master.dockerproject.org/linux/x86_64/docker-rootless-extras.tgz"
 
