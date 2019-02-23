@@ -70,7 +70,7 @@ checks() {
 			>&2 echo "- or simply log back in as the desired unprivileged user (ssh works for remote machines)"
 			exit 1
 		fi
-		export XDG_RUNTIME_DIR="/tmp/docker-rootless-$(id -u)"
+		export XDG_RUNTIME_DIR="/tmp/docker-$(id -u)"
 		mkdir -p "$XDG_RUNTIME_DIR"
 		XDG_RUNTIME_DIR_CREATED=1
 	fi
@@ -94,9 +94,27 @@ checks() {
 			INSTRUCTIONS="curl -o /etc/yum.repos.d/vbatts-shadow-utils-newxidmap-epel-7.repo https://copr.fedorainfracloud.org/coprs/vbatts/shadow-utils-newxidmap/repo/epel-7/vbatts-shadow-utils-newxidmap-epel-7.repo
 yum install -y shadow-utils46-newxidmap"
 		else
-			echo "Missing newuidmap binary found. Please install with a package manager."
+			echo "newuidmap binary found. Please install with a package manager."
 			exit 1
 		fi
+	fi
+
+	if [ -z "$SKIP_IPTABLES" ] && ! which iptables >/dev/null 2>&1 && [ ! -f /sbin/iptables ] && [ ! -f /usr/sbin/iptables ]; then
+		if which apt-get >/dev/null 2>&1; then
+			INSTRUCTIONS="${INSTRUCTIONS}
+apt-get install -y iptables"
+		elif which dnf >/dev/null 2>&1; then
+			INSTRUCTIONS="${INSTRUCTIONS}
+dnf install -y iptables"
+		else
+			echo "iptables binary found. Please install with a package manager."
+			exit 1
+		fi
+	fi
+	=
+	if [ -z "$SKIP_IPTABLES" ] && ! lsmod | grep ip_tables >/dev/null 2>&1 && ! cat /lib/modules/$(uname -r)/modules.builtin | grep ip_tables >/dev/null 2>&1; then
+			INSTRUCTIONS="${INSTRUCTIONS}
+modprobe ip_tables"
 	fi
 
 	if [ -f /proc/sys/kernel/unprivileged_userns_clone ]; then
@@ -121,7 +139,8 @@ sysctl --system"
 
 	if [ -n "$INSTRUCTIONS" ]; then
 		echo "# Missing system requirements. Please run following commands to
-# install the requirements and run this installer again"
+# install the requirements and run this installer again.
+# Alternatively iptables checks can be disabled with SKIP_IPTABLES=1"
 
 		echo
 		echo "cat <<EOF | sudo sh -x"
@@ -163,7 +182,7 @@ start_docker() {
 	
 	DOCKERD_FLAGS="--experimental"
 	
-	if ! which iptables >/dev/null 2>&1 ; then
+	if [ -n "$SKIP_IPTABLES" ]; then
 		DOCKERD_FLAGS="$DOCKERD_FLAGS --iptables=false"
 	fi
 	
@@ -206,6 +225,9 @@ EOT
 		systemctl --user start docker
 	fi
 	systemctl --user status docker | cat
+
+	sleep 1
+	PATH="$BIN:$PATH" DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock" docker version
 }
 
 service_instructions() {
@@ -222,10 +244,14 @@ EOT
 
 
 start_docker_nonsystemd() {
+	iptablesflag=
+	if [ -n "$SKIP_IPTABLES" ]; then
+		iptablesflag="--iptables=false "
+	fi
 	cat <<EOT
 # systemd not detected, dockerd daemon needs to be started manually
 
-$BIN/dockerd-rootless.sh --experimental --iptables=false --storage-driver vfs
+$BIN/dockerd-rootless.sh --experimental $iptablesflag--storage-driver vfs
 
 EOT
 }
@@ -237,7 +263,7 @@ print_instructions() {
 		echo "# WARN: dockerd is not in your current PATH or pointing to $BIN/$DAEMON"
 	fi
 	echo "# Please make sure following environment variables are set (or put them to ~/.bashrc):\n"
-	
+
 	if [ -n "$XDG_RUNTIME_DIR_CREATED" ]; then
 		echo "export XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
 	fi
@@ -246,6 +272,14 @@ print_instructions() {
 	*:$BIN:*) ;;
 	*) echo "export PATH=$BIN:\$PATH" ;;
 	esac
+
+	if [ -z "$SKIP_IPTABLES" ] && ! which iptables >/dev/null 2>&1; then
+		if [ -f /sbin/iptables ]; then
+			echo "export PATH=\$PATH:/sbin"
+		elif [ -f /usr/sbin/iptables ]; then
+			echo "export PATH=\$PATH:/usr/sbin"
+		fi
+	fi
 
 	echo "export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock"
 	echo
@@ -278,8 +312,6 @@ do_install() {
 
 	print_instructions
 
-	sleep 1
-	PATH="$BIN:$PATH" DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock" docker version
 }
 
 do_install
