@@ -94,7 +94,7 @@ checks() {
 			INSTRUCTIONS="curl -o /etc/yum.repos.d/vbatts-shadow-utils-newxidmap-epel-7.repo https://copr.fedorainfracloud.org/coprs/vbatts/shadow-utils-newxidmap/repo/epel-7/vbatts-shadow-utils-newxidmap-epel-7.repo
 yum install -y shadow-utils46-newxidmap"
 		else
-			echo "newuidmap binary found. Please install with a package manager."
+			echo "newuidmap binary not found. Please install with a package manager."
 			exit 1
 		fi
 	fi
@@ -107,7 +107,7 @@ apt-get install -y iptables"
 			INSTRUCTIONS="${INSTRUCTIONS}
 dnf install -y iptables"
 		else
-			echo "iptables binary found. Please install with a package manager."
+			echo "iptables binary not found. Please install with a package manager."
 			exit 1
 		fi
 	fi
